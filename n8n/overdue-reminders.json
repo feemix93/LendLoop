@@ -1,0 +1,165 @@
+{
+  "name": "LendLoop - Overdue reminders",
+  "nodes": [
+    {
+      "id": "o1",
+      "name": "Daily 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "o2",
+      "name": "Sign request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst ts = Math.floor(Date.now() / 1000).toString();\nconst sig = 'sha256=' + crypto.createHmac('sha256', $env.LENDLOOP_WEBHOOK_SECRET).update(`${ts}.`).digest('hex');\nreturn [{ json: { ts, sig } }];"
+      }
+    },
+    {
+      "id": "o3",
+      "name": "Fetch overdue loans",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.CONVEX_SITE_URL }}/overdue",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-lendloop-timestamp",
+              "value": "={{ $json.ts }}"
+            },
+            {
+              "name": "x-lendloop-signature",
+              "value": "={{ $json.sig }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "o4",
+      "name": "Send reminder (mock) and build write-back",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst date = new Date().toISOString().slice(0, 10);\nconst loans = $input.first().json.loans || [];\nreturn loans.map((l) => {\n  console.log(`[LendLoop reminder] to=${l.borrower.email} \"${l.toolName}\" is ${l.daysOverdue} day(s) overdue (due ${l.endDate})`);\n  const bodyString = JSON.stringify({ loanId: l.loanId, date, status: 'sent', channel: 'mock' });\n  const ts = Math.floor(Date.now() / 1000).toString();\n  const sig = 'sha256=' + crypto.createHmac('sha256', $env.LENDLOOP_WEBHOOK_SECRET).update(`${ts}.${bodyString}`).digest('hex');\n  return { json: { bodyString, ts, sig } };\n});"
+      }
+    },
+    {
+      "id": "o5",
+      "name": "Write result to Convex",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CONVEX_SITE_URL }}/reminder-result",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-lendloop-timestamp",
+              "value": "={{ $json.ts }}"
+            },
+            {
+              "name": "x-lendloop-signature",
+              "value": "={{ $json.sig }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.bodyString }}"
+      }
+    }
+  ],
+  "connections": {
+    "Daily 09:00": {
+      "main": [
+        [
+          {
+            "node": "Sign request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign request": {
+      "main": [
+        [
+          {
+            "node": "Fetch overdue loans",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch overdue loans": {
+      "main": [
+        [
+          {
+            "node": "Send reminder (mock) and build write-back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send reminder (mock) and build write-back": {
+      "main": [
+        [
+          {
+            "node": "Write result to Convex",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "REPLACE_WITH_ERROR_WORKFLOW_ID"
+  }
+}

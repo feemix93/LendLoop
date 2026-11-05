@@ -1,0 +1,67 @@
+{
+  "name": "LendLoop - Error handler",
+  "nodes": [
+    {
+      "id": "e1",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "e2",
+      "name": "Format alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const w = $json.workflow?.name;\nconst node = $json.execution?.lastNodeExecuted;\nconst msg = $json.execution?.error?.message;\nconst alert = `[LendLoop ALERT] Workflow \"${w}\" failed at \"${node}\": ${msg} (execution ${$json.execution?.id})`;\nconsole.error(alert);\nreturn [{ json: { alert } }];"
+      }
+    },
+    {
+      "id": "e3",
+      "name": "Notify team (swap in Slack/Email node)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        460,
+        0
+      ],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format alert": {
+      "main": [
+        [
+          {
+            "node": "Notify team (swap in Slack/Email node)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

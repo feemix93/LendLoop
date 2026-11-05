@@ -1,0 +1,73 @@
+{
+  "name": "LendLoop - Request notification",
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "lendloop-request-event",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lendloop-request-event",
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Verify signature and format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst secret = $env.LENDLOOP_WEBHOOK_SECRET;\nconst ts = $json.headers['x-lendloop-timestamp'];\nconst sig = $json.headers['x-lendloop-signature'] || '';\nconst bodyStr = JSON.stringify($json.body);\nconst expected = 'sha256=' + crypto.createHmac('sha256', secret).update(`${ts}.${bodyStr}`).digest('hex');\nconst ok = sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));\nif (!ok || Math.abs(Date.now() / 1000 - Number(ts)) > 300) throw new Error('Invalid webhook signature');\nconst e = $json.body;\nconst texts = {\n  created: `New borrow request for \"${e.toolName}\" (${e.startDate} to ${e.endDate}).`,\n  approved: `Your request for \"${e.toolName}\" was approved.`,\n  declined: `Your request for \"${e.toolName}\" was declined.`,\n  returned: `\"${e.toolName}\" was marked as returned. Thanks!`,\n};\nconst message = texts[e.event] || `Update on \"${e.toolName}\".`;\nconsole.log(`[LendLoop notification] to=${e.recipient.email} eventId=${e.eventId} :: ${message}`);\nreturn [{ json: { to: e.recipient.email, name: e.recipient.name, eventId: e.eventId, message } }];"
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Send notification (swap in Email/Slack node)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify signature and format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify signature and format": {
+      "main": [
+        [
+          {
+            "node": "Send notification (swap in Email/Slack node)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "REPLACE_WITH_ERROR_WORKFLOW_ID"
+  }
+}
